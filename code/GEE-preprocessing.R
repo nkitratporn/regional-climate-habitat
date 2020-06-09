@@ -55,7 +55,7 @@ range <- ee$Geometry$Polygon(
 rangeExtent <- ee$Geometry(range,{},FALSE)        #planner geometry
 rangeExtent <- ee$FeatureCollection(rangeExtent)  #as feature collection
 
-Map$addLayer(rangeExtent,name='Range')            # check extent of range
+Map$addLayer(rangeExtent,name='Range')            # visualize extent of range
 
 ## functions
 ### rename ERA5 bands
@@ -92,10 +92,13 @@ clipImage <- function(img){
   return(img$clip(rangeExtent)$copyProperties(orig,orig$propertyNames()))
 }
 
-#=====================================#
+#============CURRENT ERA5==============#
+
 ## date for filtering
 start <- c('1994-07-20')
 end <- c('2019-12-31')
+## study period (historical)
+historyPeriod <- seq(1995,2019,5)
 
 ## load ERA5 image collection and filter
 era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
@@ -103,9 +106,6 @@ era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
   map(clipImage)$
   map(eraRename)$
   map(eraUnitConversion)
-
-## study period (historical)
-historyPeriod <- seq(1995,2019,5)
 
 ## download parameter
 downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'ERA-stack')
@@ -123,7 +123,8 @@ for (y in historyPeriod) {
   cat('execute: ',y)
 }
 Map$addLayer(era$first()$select('pr'),list(min=0, max=6),'pr first day')
-#=====================================#
+
+#=========FUTURE NEX-GDDP============#
 ## study period (future projection)
 futurePeriod <- seq(2020,2074,5)
 
