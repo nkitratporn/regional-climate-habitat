@@ -1,20 +1,16 @@
+#[ status: completed ]
+#[ note  : none]
+#@ This code is for pre-processing (mainly filter/clip/apply simple calculation) and downloading
+#@ images from daily pr and tasmax images provided ERA5 and NEX-GDDP from GEE
+#@ 1. define study extent and use it to clip images
+#@ 2. convert the values to desire units (F and in.)
+#@ 3. batch download images and create informative names
+#@ 4. from daily pr, calculated annual sum and then average over the historical period
+
 #=====================================#
 # loading library
 ## download packages not yet in CRAN (e.g. github)
 library(devtools)
-
-## raster and shapefile processing ##
-library(rgeos)
-library(rgdal)
-library(raster)
-
-## data handling ##
-library(tidyverse)
-
-## generating graph ##
-library(rasterVis)
-library(gridExtra)
-library(ggpubr)
 
 ## rgee package allowing R to talk with EE
 #remotes::install_github("r-spatial/rgee")
@@ -55,6 +51,7 @@ range <- ee$Geometry$Polygon(
 rangeExtent <- ee$Geometry(range,{},FALSE)        #planner geometry
 rangeExtent <- ee$FeatureCollection(rangeExtent)  #as feature collection
 
+Map$centerObject(rangeExtent, zoom = 4)
 Map$addLayer(rangeExtent,name='Range')            # visualize extent of range
 
 ## functions
@@ -159,3 +156,45 @@ for (y in futurePeriod) {
   }
   cat('Completed: ',y,'-',y+4,'\n')
 }
+
+
+#=========Mean ANNUAL PRECIPITATION============#
+## load ERA5 image collection and filter
+era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
+  filter(ee$Filter$calendarRange(1990,2019,'year'))$
+  map(clipImage)$
+  map(eraRename)$
+  map(eraUnitConversion)
+
+Map$addLayer(era$first()$select('pr'),list(min=0, max=5,palette = c('red','orange','yellow','green','blue')),'pr first day')
+
+## historical time period for calculation
+year <- ee$List$sequence(1995,2019)
+
+## function to filter and sum precipitation value by year
+annual <- function(y){
+  prAnnual <- era$
+    select('pr')$
+    filter(ee$Filter$calendarRange(y, y, 'year'))$
+    sum()
+  
+  return(prAnnual)
+}
+
+## create image collection from filtered images after applying 'annual' function
+eraAnnual <- ee$ImageCollection$fromImages(
+  year$map(ee_utils_pyfunc(annual)))
+
+Map$addLayer(eraAnnualMean$first()$select('pr'),list(min=0, max=100,palette = c('red','orange','yellow','green','blue')),'pr first day')
+
+## calculate mean value over annual pr collection
+eraAnnualMean <- eraAnnual$mean()
+
+Map$addLayer(eraAnnualMean,list(min=0, max=200,palette = c('red','orange','yellow','green','blue')),'Pr annual mean')
+
+downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'ERA-stack')
+
+task <- ee$batch$Export$image(eraAnnualMean, 'pr-Annual1995-2019', downConfig)
+task$start() 
+
+ee_monitoring() # check running task on GEE
