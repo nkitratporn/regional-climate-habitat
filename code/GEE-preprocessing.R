@@ -1,7 +1,7 @@
 #[ status: completed ]
 #[ note  : none]
 #@ This code is for pre-processing (mainly filter/clip/apply simple calculation) and downloading
-#@ images from daily pr and tasmax images provided ERA5 and NEX-GDDP from GEE
+#@ daily pr and tasmax images provided by ERA5 and NEX-GDDP from GEE
 #@ 1. define study extent and use it to clip images
 #@ 2. convert the values to desire units (F and in.)
 #@ 3. batch download images and create informative names
@@ -107,7 +107,7 @@ era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
 ## download parameter
 downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'ERA-stack')
 
-## loop through each year, create year stack, download to drive (1 stack/yr)
+## loop through each year, create year stack, download to drive (1 stack/5 yr)
 for (y in historyPeriod) {
   pr <- era$select('pr')$filter(ee$Filter$calendarRange(y,y+4,'year'))$toBands()
   tasmax <- era$select('tasmax')$filter(ee$Filter$calendarRange(y,y+4,'year'))$toBands()
@@ -132,6 +132,8 @@ models <- list('CESM1-BGC','MPI-ESM-MR','MIROC5', 'IPSL-CM5A-MR','CanESM2')
 ## download parameter
 downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'NEX-stack')
 
+## loop through each year, filter by model/scenario (5 models and 2 scenario over 2000-2074)
+## stack each type of image (pr and tasmax) from the filtered collection and download to drive (1 stack/5 yr)
 for (y in futurePeriod) {
   for (m in 1:length(models)) {
     for (s in 1:length(scenario)) {
