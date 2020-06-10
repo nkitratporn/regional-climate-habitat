@@ -28,7 +28,7 @@ library(googledrive) #install.packages("googledrive")
 ee_install()
 
 # connect and authenticate GEE and Gdrive
-ee_Initialize(email = 'tita@g.ecc.u-tokyo.ac.jp') # even after authenticated successfully, Gdrive is not connected
+ee_Initialize() # even after authenticated successfully, Gdrive is not connected
 
 # checking the setup
 ee_check() # somehow always get stuck when authenticating Gdrive, but seems to work if directly use googledrive::drive_auth()
@@ -53,6 +53,8 @@ rangeExtent <- ee$FeatureCollection(rangeExtent)  #as feature collection
 
 Map$centerObject(rangeExtent, zoom = 4)
 Map$addLayer(rangeExtent,name='Range')            # visualize extent of range
+
+rangeExtentR <- ee$Image('users/tita/rangeExtentR')
 
 ## functions
 ### rename ERA5 bands
@@ -89,28 +91,35 @@ clipImage <- function(img){
   return(img$clip(rangeExtent)$copyProperties(orig,orig$propertyNames()))
 }
 
+maskImage <- function(img){
+  orig <- img;
+  mask <- img$updateMask(rangeExtentR);
+  return(mask$copyProperties(orig,orig$propertyNames()))
+}
+
 #============CURRENT ERA5==============#
 
 ## date for filtering
 start <- c('1994-07-20')
 end <- c('2019-12-31')
 ## study period (historical)
-historyPeriod <- seq(1995,2019,5)
+historyPeriod <- seq(2011,2011,1)
 
 ## load ERA5 image collection and filter
 era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
   filterDate(start,end)$
   map(clipImage)$
   map(eraRename)$
-  map(eraUnitConversion)
+  map(eraUnitConversion)$
+  map(maskImage)
 
 ## download parameter
 downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'ERA-stack')
 
 ## loop through each year, create year stack, download to drive (1 stack/5 yr)
 for (y in historyPeriod) {
-  pr <- era$select('pr')$filter(ee$Filter$calendarRange(y,y+4,'year'))$toBands()
-  tasmax <- era$select('tasmax')$filter(ee$Filter$calendarRange(y,y+4,'year'))$toBands()
+  pr <- era$select('pr')$filter(ee$Filter$calendarRange(y,y+1,'year'))$toBands()
+  tasmax <- era$select('tasmax')$filter(ee$Filter$calendarRange(y,y,'year'))$toBands()
   exportpr <- paste0('pr-',y)
   exporttasmax <- paste0('tasmax-',y)
   task1 <- ee$batch$Export$image(pr, exportpr, downConfig)
@@ -142,12 +151,13 @@ for (y in futurePeriod) {
         filterMetadata('scenario','equals',scenario[[s]])$
         filterMetadata('model','equals',models[[m]])$
         map(clipImage)$
-        map(nexUnitConversion)
+        map(nexUnitConversion)$
+        map(maskImage)
       pr <- col$select('pr')$toBands()
       tasmax <- col$select('tasmax')$toBands()
       
-      exportpr <- paste0('pr-',scenario[[s]],'-m',m,'-',y,'-',y+4)
-      exporttasmax <- paste0('tasmax-',scenario[[s]],'-m',m,'-',y,'-',y+4)
+      exportpr <- paste0('pr-',scenario[[s]],'-m',m,'-',y)
+      exporttasmax <- paste0('tasmax-',scenario[[s]],'-m',m,'-',y)
       task1 <- ee$batch$Export$image(pr, exportpr, downConfig)
       task2 <- ee$batch$Export$image(tasmax,exporttasmax,downConfig)
       task1$start()
@@ -168,7 +178,7 @@ era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
   map(eraRename)$
   map(eraUnitConversion)
 
-Map$addLayer(era$first()$select('pr'),list(min=0, max=5,palette = c('red','orange','yellow','green','blue')),'pr first day')
+Map$addLayer(era$first()$select('pr'),list(min=0, max=2,palette = c('red','orange','yellow','green','blue')),'pr first day')
 
 ## historical time period for calculation
 year <- ee$List$sequence(1995,2019)
