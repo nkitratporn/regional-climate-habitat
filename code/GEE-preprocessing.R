@@ -103,7 +103,7 @@ maskImage <- function(img){
 start <- c('1994-07-20')
 end <- c('2019-12-31')
 ## study period (historical)
-historyPeriod <- seq(2011,2011,1)
+historyPeriod <- seq(1995,2019,5)
 
 ## load ERA5 image collection and filter
 era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
@@ -113,13 +113,20 @@ era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
   map(eraUnitConversion)$
   map(maskImage)
 
+Map$addLayer(era$first()$select('pr'),list(min=0, max=6),'pr first day')
+
 ## download parameter
-downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'ERA-stack')
+downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'ERA5-mask')
+
+pr <- era$select('pr')$filter(ee$Filter$calendarRange(1994,1994,'year'))$toBands()
+tasmax <- era$select('tasmax')$filter(ee$Filter$calendarRange(1994,1994,'year'))$toBands()
+task1 <- ee$batch$Export$image(pr, 'pr-1994', downConfig)$start()
+task2 <- ee$batch$Export$image(tasmax,'tasmax-1994', downConfig)$start()
 
 ## loop through each year, create year stack, download to drive (1 stack/5 yr)
 for (y in historyPeriod) {
-  pr <- era$select('pr')$filter(ee$Filter$calendarRange(y,y+1,'year'))$toBands()
-  tasmax <- era$select('tasmax')$filter(ee$Filter$calendarRange(y,y,'year'))$toBands()
+  pr <- era$select('pr')$filter(ee$Filter$calendarRange(y,y+4,'year'))$toBands()
+  tasmax <- era$select('tasmax')$filter(ee$Filter$calendarRange(y,y+4,'year'))$toBands()
   exportpr <- paste0('pr-',y)
   exporttasmax <- paste0('tasmax-',y)
   task1 <- ee$batch$Export$image(pr, exportpr, downConfig)
@@ -128,7 +135,48 @@ for (y in historyPeriod) {
   task2$start()
   cat('execute: ',y)
 }
-Map$addLayer(era$first()$select('pr'),list(min=0, max=6),'pr first day')
+
+#=========Mean ANNUAL PRECIPITATION============#
+## load ERA5 image collection and filter
+era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
+  filter(ee$Filter$calendarRange(1990,2019,'year'))$
+  map(clipImage)$
+  map(eraRename)$
+  map(eraUnitConversion)$
+  map(maskImage)
+
+Map$addLayer(era$first()$select('pr'),list(min=0, max=2,palette = c('red','orange','yellow','green','blue')),'pr first day')
+
+## historical time period for calculation
+year <- ee$List$sequence(1995,2019)
+
+## function to filter and sum precipitation value by year
+annual <- function(y){
+  prAnnual <- era$
+    select('pr')$
+    filter(ee$Filter$calendarRange(y, y, 'year'))$
+    sum()
+  
+  return(prAnnual)
+}
+
+## create image collection from filtered images after applying 'annual' function
+eraAnnual <- ee$ImageCollection$fromImages(
+  year$map(ee_utils_pyfunc(annual)))
+
+Map$addLayer(eraAnnualMean$first()$select('pr'),list(min=0, max=100,palette = c('red','orange','yellow','green','blue')),'pr first day')
+
+## calculate mean value over annual pr collection
+eraAnnualMean <- eraAnnual$mean()
+
+Map$addLayer(eraAnnualMean,list(min=0, max=200,palette = c('red','orange','yellow','green','blue')),'Pr annual mean')
+
+downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'ERA5-mask')
+
+task <- ee$batch$Export$image(eraAnnualMean, 'pr-Annual1995-2019', downConfig)
+task$start() 
+
+ee_monitoring() # check running task on GEE
 
 #=========FUTURE NEX-GDDP============#
 ## study period (future projection)
@@ -139,7 +187,7 @@ scenario <- list('rcp45','rcp85')
 models <- list('CESM1-BGC','MPI-ESM-MR','MIROC5', 'IPSL-CM5A-MR','CanESM2')
 
 ## download parameter
-downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'NEX-stack')
+downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'NEX-mask')
 
 ## loop through each year, filter by model/scenario (5 models and 2 scenario over 2000-2074)
 ## stack each type of image (pr and tasmax) from the filtered collection and download to drive (1 stack/5 yr)
@@ -169,44 +217,3 @@ for (y in futurePeriod) {
   cat('Completed: ',y,'-',y+4,'\n')
 }
 
-
-#=========Mean ANNUAL PRECIPITATION============#
-## load ERA5 image collection and filter
-era <- ee$ImageCollection('ECMWF/ERA5/DAILY')$
-  filter(ee$Filter$calendarRange(1990,2019,'year'))$
-  map(clipImage)$
-  map(eraRename)$
-  map(eraUnitConversion)
-
-Map$addLayer(era$first()$select('pr'),list(min=0, max=2,palette = c('red','orange','yellow','green','blue')),'pr first day')
-
-## historical time period for calculation
-year <- ee$List$sequence(1995,2019)
-
-## function to filter and sum precipitation value by year
-annual <- function(y){
-  prAnnual <- era$
-    select('pr')$
-    filter(ee$Filter$calendarRange(y, y, 'year'))$
-    sum()
-  
-  return(prAnnual)
-}
-
-## create image collection from filtered images after applying 'annual' function
-eraAnnual <- ee$ImageCollection$fromImages(
-  year$map(ee_utils_pyfunc(annual)))
-
-Map$addLayer(eraAnnualMean$first()$select('pr'),list(min=0, max=100,palette = c('red','orange','yellow','green','blue')),'pr first day')
-
-## calculate mean value over annual pr collection
-eraAnnualMean <- eraAnnual$mean()
-
-Map$addLayer(eraAnnualMean,list(min=0, max=200,palette = c('red','orange','yellow','green','blue')),'Pr annual mean')
-
-downConfig = list(region= rangeExtent$geometry(), scale = 28000, maxPixels = 1.0E13, driveFolder = 'ERA-stack')
-
-task <- ee$batch$Export$image(eraAnnualMean, 'pr-Annual1995-2019', downConfig)
-task$start() 
-
-ee_monitoring() # check running task on GEE
