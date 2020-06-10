@@ -27,6 +27,11 @@ library(mapdata)
 ## c++ communication (lower load with recursive function/looping)
 library(Rcpp)
 
+#๒ parallel processing
+library(foreach)
+library(doParallel)
+
+
 #=====================================#
 ## KBDI Calculation
 #@ KBDI equation and symbol explained
@@ -45,18 +50,23 @@ library(Rcpp)
 #@ dQ      : drought factor calculate using eq.2 and 3
 
 #=====================================#
+#Register CoreCluster
+UseCores <- detectCores() - 10 #Define how many cores you want to use
+cl <- makeCluster(UseCores)
+registerDoParallel(cl)
+
 ## load polygon data
 rangeDetail <- readOGR('data/shapefiles/rsStudy_dissolved.shp')
 rangeCountry <- readOGR('data/shapefiles/rsStudy.shp')
 
 ## check number of life 
-pr.files <- list.files('data/ERA-stack/',pattern = '.*pr-([0-9]+).*')
-tasmax.files <- list.files('data/ERA-stack/',pattern = '.*tasmax-([0-9]+).*')
+pr.files <- list.files('data/ERA5-mask/',pattern = '.*pr-([0-9]+).*')
+tasmax.files <- list.files('data/ERA5-mask/',pattern = '.*tasmax-([0-9]+).*')
 
 ## load raster data
 
-prAnnual <- stack('data/ERA-stack/pr-Annual1995-2019.tif')                            # GEE calculation caused some slight mismatch  between raster
-prAnnual <- projectRaster(prAnnual,stack(paste0('data/ERA-stack/',pr.files[1]))[[1]]) # need to project to same extent and resolution
+prAnnual <- stack('data/ERA5-mask/pr-Annual1995-2019.tif')                            # GEE calculation caused some slight mismatch  between raster
+prAnnual <- projectRaster(prAnnual,stack(paste0('data/ERA5-mask/',pr.files[1]))[[1]]) # need to project to same extent and resolution
 
 rangeDetail.r <- prAnnual
 rangeDetail.r <- rasterize(rangeDetail,rangeDetail.r)
@@ -100,21 +110,14 @@ for (i in 2:length(pr.files)) {
   start <- proc.time()[[3]]
   cat('load raster stack for ', sub(".*(\\d+{4}).*$", "\\1", pr.files[i]),'\n')
   if(i==1){
-    pr <- stack(paste0('data/ERA-stack/',pr.files[2]))
-    pr <- mask(crop(pr,rangeDetail),rangeDetail)
-    pr.date <- s.Date(gsub('.*X([0-9]+).*','\\1',names(tasmax)), format = '%Y%m%d')
-  
-    tasmax <- stack(paste0('data/ERA-stack/', tasmax.files[i]))
-    tasmax <- mask(crop(tasmax,rangeDetail),rangeDetail)
-    tasmax.date <- as.Date(gsub('.*X([0-9]+).*','\\1',names(tasmax)), format = '%Y%m%d')
+    pr <- stack(paste0('data/ERA5-mask/',pr.files[2]))
+    tasmax <- stack(paste0('data/ERA5-mask/', tasmax.files[i]))
   }else{
-    pr <- stack(paste0('data/ERA-stack/',pr.files[2]))
-    pr <- mask(crop(pr,rangeDetail),rangeDetail)
+    pr <- stack(paste0('data/ERA5-mask/',pr.files[2]))
     first.date <- as.Date(paste0(gsub(".*(\\d+{4}).*$", "\\1",names(pr[[1]])),'0101'), format = '%Y%m%d')
-    pr.date <- first.date -1 + as.numeric(gsub("(?:[^.]+\\.){2}([^.]+).*", "\\1",names(pr)))
     
-    tasmax <- stack(paste0('data/ERA-stack/',tasmax.files[2]))
-    tasmax <- mask(crop(tasmax,rangeDetail),rangeDetail)
+    
+    tasmax <- stack(paste0('data/ERA5-mask/',tasmax.files[2]))
     tasmax.date <- first.date -1 + as.numeric(gsub("(?:[^.]+\\.){2}([^.]+).*", "\\1",names(tasmax)))
   }
   pr <- setZ(pr,pr.date)
@@ -123,18 +126,38 @@ for (i in 2:length(pr.files)) {
   tasmax <- setZ(tasmax,tasmax.date)
   cat('masked tasmax: ', nlayers(tasmax), ' COMPLETED.../ ')
   
-  writeRaster(pr,paste0('data/climate-mask/pr-daily/',pr.files[i]),overwrite=TRUE)
-  writeRaster(tasmax,paste0('data/climate-mask/tasmax-daily/',tasmax.files[i]),overwrite=TRUE)
-  cat('save masked: COMPLETED.../ ')
   
   #========CONVERT TO DATAFRAME===========#
   
   ### 1. convert to dataframe
-  pr.df <- as.data.frame(pr,xy=T)
-  pr.df$location <- seq(1,nrow(pr.df))
+  pr.df <- data.frame()
+  tasmax.df <- data.frame()
+  ## extract regional-scale mean and stddev into df
+  pr.df <- foreach(i=1:nlayers(pr), .packages = 'raster',
+                   .combine = 'cbind',.export = 'pr.df') %dopar% {
+                     if (i > 1){
+                       temp <- as.data.frame(pr[[i]],xy=T)
+                       temp <- as.data.frame(temp[,-c(1,2)])
+                       colnames(temp)[1] <- names(pr[[i]])
+                     }else{
+                       temp <- as.data.frame(pr[[i]],xy=T)
+                       colnames(temp)[3] <- names(pr[[i]])
+                     }
+                     temp
+                   }
   
-  tasmax.df <- as.data.frame(tasmax,xy=T)
-  tasmax.df$location <- seq(1,nrow(tasmax.df))
+  tasmax.df <- foreach(i=1:nlayers(tasmax), .packages = 'raster',
+                       .combine = 'cbind',.export = 'tasmax.df') %dopar% {
+                         if (i > 1){
+                           temp <- as.data.frame(tasmax[[i]],xy=T)
+                           temp <- as.data.frame(temp[,-c(1,2)])
+                           colnames(temp)[1] <- names(tasmax[[i]])
+                         }else{
+                           temp <- as.data.frame(tasmax[[i]],xy=T)
+                           colnames(temp)[3] <- names(tasmax[[i]])
+                         }
+                         temp
+                       }
   
   ### 2. melt by column names and extract date from variable name, change column name
   if(i==1){
@@ -165,7 +188,7 @@ for (i in 2:length(pr.files)) {
     rename(prAnnual = value)
   
   cat('df: COMPLETED.../ ')
-
+  
   #========CALCULATION STEPS===========#
   # 1. calculate net precipitation (NF) dataframe
   #@ NPR is computed by subtracting 0.2 in. from the value of daily rainfall.
@@ -212,7 +235,7 @@ for (i in 2:length(pr.files)) {
   #tail(pr.df.m[!is.na(pr.df.m$pr),],20)
   
   ## calculate PET part inside dQ formula
-  #@ dQ   = 10^(-3)*(800–Q0) [0.968exp(0.0486T) – 8.3] dτ / [1+10.88 exp (-0.0441 R)]
+  #@ dQ   = 10^(-3)*(800Â–Q0) [0.968exp(0.0486T) Â– 8.3] dt / [1+10.88 exp (-0.0441 R)]
   pr.df.m <- pr.df.m %>%
     mutate(pet = (0.968*exp(0.0486*tasmax)-8.30)/1000.0/(1.0+10.88*exp(-0.0441*prAnnual)))
   
@@ -230,7 +253,7 @@ for (i in 2:length(pr.files)) {
     group_by(location) %>%
     mutate(kbdi = kbdiC(kbdi_last,pet,nf)) %>%
     ungroup()
-    
+  
   cat('KBDI: COMPLETED.../ ')
   
   last.kbdi <- kbdi.df.m %>%
@@ -248,61 +271,4 @@ for (i in 2:length(pr.files)) {
   cat('elapse: ',end-start,'sec \n')
 }
 
-
-#temp fast_mask function
-fast_mask <- function(ras = NULL, mask = NULL, inverse = FALSE, updatevalue = NA) {
-  
-  stopifnot(inherits(ras, "Raster"))
-  
-  stopifnot(inherits(mask, "Raster") | inherits(mask, "sf"))
-  
-  stopifnot(raster::compareCRS(ras, mask))
-  
-  
-  ## If mask is a polygon sf, pre-process:
-  
-  if (inherits(mask, "sf")) {
-    
-    stopifnot(unique(as.character(sf::st_geometry_type(mask))) %in% c("POLYGON", "MULTIPOLYGON"))
-    
-    # First, crop sf to raster extent
-    sf.crop <- suppressWarnings(sf::st_crop(mask,
-                                            y = c(
-                                              xmin = raster::xmin(ras),
-                                              ymin = raster::ymin(ras),
-                                              xmax = raster::xmax(ras),
-                                              ymax = raster::ymax(ras)
-                                            )))
-    sf.crop <- sf::st_cast(sf.crop)
-    
-    # Now rasterize sf
-    mask <- fasterize::fasterize(sf.crop, raster = ras)
-    
-  }
-  
-  
-  
-  if (isTRUE(inverse)) {
-    
-    ras.masked <- raster::overlay(ras, mask,
-                                  fun = function(x, y)
-                                  {ifelse(!is.na(y), updatevalue, x)})
-    
-  } else {
-    
-    ras.masked <- raster::overlay(ras, mask,
-                                  fun = function(x, y)
-                                  {ifelse(is.na(y), updatevalue, x)})
-    
-  }
-  
-  ras.masked
-  
-}
-
-
-check.time <- microbenchmark("poly"   = mask(crop(pr,rangeDetail),rangeDetail),
-                             "raster c" = mask(crop(pr,rangeDetail.r),rangeDetail.r),
-                             "fast raster c" = fast_mask(crop(pr,rangeDetail.r),rangeDetail.r),
-                             "fast raster o" = fast_mask(pr,rangeDetail.r)
-               )
+stopCluster(cl)
