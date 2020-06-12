@@ -22,11 +22,21 @@
 library(tidyverse)
 
 ## generating graph ##
+library(RColorBrewer)
 library(ggplot2)
 library(maptools)
 library(rasterVis)
 library(gridExtra)
 
-# parallel processing
+## parallel processing
 library(foreach)
 library(doParallel)
+
+#=====================================#
+
+## check color blind friendly palette
+#display.brewer.all(colorblindFriendly = T)
+
+
+# A. Time-series
+## 1. set 4 boundaries 1) Eastern Thailand, 2) Western Ghats India/Bangladesh, 3) Bronean Indonesia, 4) Eastern India

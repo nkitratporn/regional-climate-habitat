@@ -1,3 +1,12 @@
+#[ status: completed]
+#[ note: ]
+#@ This code is for extracting raster value to dataframe and plotting raster stacks
+#@ 1. annual average change 
+#@ 2. interannual standard deviation change
+#@ 3. seasonal average change
+
+#=====================================#
+
 # loading library
 ## data handling ##
 library(tidyverse)
@@ -190,7 +199,9 @@ prStdChange <- prStd - prStd[[1]]
 tasmaxStdChange <- tasmaxStd - tasmaxStd[[1]]
 names(prStdChange) <- names(prStd)
 names(tasmaxStdChange) <- names(tasmaxStd)
+
 dir.create('data/climate-mask/prStddev-change'); dir.create('data/climate-mask/tasmaxStddev-change')
+
 writeRaster(prStdChange,'data/climate-mask/prStddev-change/',bylayer=T,names(prStdChange),format='GTiff',overwrite=T)
 writeRaster(tasmaxStdChange,'data/climate-mask/tasmaxStddev-change/',bylayer=T,names(tasmaxStdChange),format='GTiff',overwrite=T)
 
@@ -279,19 +290,11 @@ longterm.stats$Country <- factor(longterm.stats$Country,levels = c('Regional','B
 write.csv(longterm.stats,'output/annual-longterm-stats-final.csv')
 
 
-#--------
-# dryDays
-dryDays.era <- stack(paste0('data/ERA5-longterm-stats/',
-                            list.files('data/ERA5-longterm-stats/',pattern = '*-drydays-*')))
-dryDays.nex <- stack(paste0('data/NEX-longterm-stats/',
-                            list.files('data/NEX-longterm-stats/',pattern = '*-drydays-*')))
-
-stopCluster(cl)
-
 
 #-------
 # graph
-modelNames <- c('CESM1-BGC','MPI-ESM-MR','MIROC5', 'IPSL-CM5A-MR', 'ACCESS-1.0','CanESM2')
+
+modelNames <- c('CESM1-BGC','MPI-ESM-MR','MIROC5', 'IPSL-CM5A-MR', 'CanESM2') #'ACCESS-1.0' (m5 exlucded)
 
 ## REGIONAL SCALE ##
 ## change in pr and tasmax
@@ -318,7 +321,14 @@ levelplot(tasmaxChange.select[[2:nlayers(tasmaxChange.select)]],
           col.regions=tascol, colorkey = list(space = "bottom", height = 1, width = 1),
           xlab = list(label = "", vjust = -.2), ylab = list(label=""))
 
-# change in pr and tasmax
+
+# change in pr and tasmax standard deviation
+## load raster stack
+prStdChange <- stack(paste0('data/climate-mask/prStddev-change/', 
+                            list.files('data/climate-mask/prStddev-change/', pattern = '*.tif$')))
+tasmaxStdChange <- stack(paste0('data/climate-mask/tasmaxStddev-change/',
+                                list.files('data/climate-mask/tasmaxStddev-change/', pattern = '*.tif$')))
+
 #selected models
 prStdChange.select <- dropLayer(prStdChange,c(10,11,22,23))
 tasmaxStdChange.select <- dropLayer(tasmaxStdChange,c(10,11,22,23))
@@ -326,8 +336,8 @@ tasmaxStdChange.select <- dropLayer(tasmaxStdChange,c(10,11,22,23))
 # setup color and break points
 prbreaks <- seq(-1000, 1500, by = 250)
 tasbreaks <- seq(-0.6,0.6,by=0.20)
-tascol <- colorRampPalette(c('blue',"lightblue", "yellow", "orange", "red"))(length(tasbreaks)-1) #"darkred", "#32174D"
-prcol <- colorRampPalette(c("blue",'skyblue', "yellow", "orange", "red",'darkred'))(length(prbreaks)-1)
+tascol <- colorRampPalette(c('#31a354','#a1d99b',"#e5f5f9", "#bcbddc", "#756bb1"))(length(tasbreaks)-1) #"darkred", "#32174D"
+prcol <- colorRampPalette(c('#31a354','#a1d99b',"#e5f5f9","#bcbddc", "#756bb1",'#5e3c99'))(length(prbreaks)-1)
 
 levelplot(prStdChange.select[[2:nlayers(prStdChange.select)]],
           layout = c(4,5), names.attr=c(rep("",20)),
@@ -370,8 +380,8 @@ levelplot(tasmaxChange.tha[[2:nlayers(tasmaxChange.tha)]],
 # setup color and break points
 prbreaks <- seq(-1000, 1500, by = 250)
 tasbreaks <- seq(-0.6,0.6,by=0.20)
-tascol <- colorRampPalette(c('blue',"lightblue", "yellow", "orange", "red"))(length(tasbreaks)-1) #"darkred", "#32174D"
-prcol <- colorRampPalette(c("blue",'skyblue', "yellow", "orange", "red",'darkred'))(length(prbreaks)-1)
+tascol <- colorRampPalette(c('#31a354','#a1d99b',"#e5f5f9", "#bcbddc", "#756bb1"))(length(tasbreaks)-1) #"darkred", "#32174D"
+prcol <- colorRampPalette(c('#31a354','#a1d99b',"#e5f5f9","#bcbddc", "#756bb1",'#5e3c99'))(length(prbreaks)-1)
 
 levelplot(prStdChange.tha[[2:nlayers(prStdChange.tha)]],
           layout = c(4,5), names.attr=c(rep("",20)),
