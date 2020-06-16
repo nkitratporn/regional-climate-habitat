@@ -68,8 +68,9 @@ eraRename = function(img){
 eraUnitConversion <- function(img){
   orig <- img;
   pr <- img$select('pr')$multiply(39.37)$rename('pr')
-  tasmax <- img$select('tasmax')$multiply(9)$divide(5)
-  tasmax <- tasmax$subtract(459.67)$rename('tasmax')
+  tasmax <- img$select('tasmax')$subtract(273.15)
+  tasmax <- tasmax$multiply(9)$divide(5)
+  tasmax <- tasmax$add(32)$rename('tasmax')
   new <- pr$float()$addBands(tasmax$float())$copyProperties(orig,orig$propertyNames())
   
   return(new)
