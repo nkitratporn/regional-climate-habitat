@@ -67,10 +67,9 @@ eraRename = function(img){
 ### convert ERA5 values from meter (m) to inch (in) / Kelvin (K) to Fehrenhin (F)
 eraUnitConversion <- function(img){
   orig <- img;
-  pr <- img$select('pr')$multiply(39.37)
-  tasmax <- img$select('tasmax')$subtract(273.15)
-  tasmax <- tasmax$multiply(9)$divide(5)
-  tasmax <- tasmax$add(32)
+  pr <- img$select('pr')$multiply(39.37)$rename('pr')
+  tasmax <- img$select('tasmax')$multiply(9)$divide(5)
+  tasmax <- tasmax$subtract(459.67)$rename('tasmax')
   new <- pr$float()$addBands(tasmax$float())$copyProperties(orig,orig$propertyNames())
   
   return(new)
@@ -79,8 +78,10 @@ eraUnitConversion <- function(img){
 ### convert NEX-GDDP values from flux of precipiation -> kg/(m^2*s) to in. / K to F and 
 nexUnitConversion <- function(img){
     orig <- img;
-    pr <- img$select('pr')$multiply(86400)$multiply(39.37)$rename('pr');
-    tasmax <- img$select('tasmax')$subtract(273.15)$multiply(9)$divide(5)$add(32)$rename('tasmax');
+    pr <- img$select('pr')$multiply(86400)$multiply(0.03937)$rename('pr');
+    tasmax <- img$select('tasmax')$subtract(273.15)
+    tasmax <- tasmax$multiply(9)$divide(5)
+    tasmax <- tasmax$add(32)$rename('tasmax')
     new <- pr$float()$addBands(tasmax$float())$copyProperties(orig,orig$propertyNames())
     return(new)
   }
